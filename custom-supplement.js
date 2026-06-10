@@ -7,10 +7,6 @@
  *   1. The "Choose a Flavor" <option> string is now a backtick template (was a broken split string).
  *   2. The add-to-cart click handler no longer shadows the element map (`e` -> `ev`).
  *   3. Two `SameSite:Lax` cookie typos corrected to `SameSite=Lax`.
- *
- * LEGACY: the Reduced Sugar / No Citric Acid logic (sugarFreeCheckbox, noCitricAcidCheckbox,
- * reducedSugarCheckbox, getModifiedFlavor, sugarFree/noCitricAcid) is inert — those checkboxes
- * were removed from the page. It is null-guarded and safe to delete whenever you like.
  */
 
 // ---------- Config ----------
@@ -204,7 +200,6 @@ function calcTotalCalories() {
     }
     if (flavorCals > 0) total += flavorCals;
   }
-  if (els.reducedSugarCheckbox && els.reducedSugarCheckbox.checked) total -= 8; // LEGACY
   return Math.round(total);
 }
 
@@ -255,8 +250,6 @@ const els = {
   closeXIcon: document.getElementById("close-x-icon"),
   caloriesDynamic: document.querySelector(".calories-dynamic"),
   caloriesAmount: document.getElementById("calories-amount"),
-  sugarFreeCheckbox: document.getElementById("sugar-free"),        // LEGACY
-  noCitricAcidCheckbox: document.getElementById("no-citric-acid"), // LEGACY
   openPresetBtn: document.getElementById("open-preset"),
   savePresetBtn: document.getElementById("save-preset"),
   closePresetModalBtn: document.getElementById("close-preset-modal"),
@@ -265,8 +258,7 @@ const els = {
   presetInput1: document.getElementById("preset-1"),
   presetInput2: document.getElementById("preset-2"),
   presetInput3: document.getElementById("preset-3"),
-  loginText: document.getElementById("login-text"),
-  reducedSugarCheckbox: document.getElementById("Checkbox-1-1")    // LEGACY
+  loginText: document.getElementById("login-text")
 };
 
 // ---------- Cookie / JWT / customer-id helpers ----------
@@ -882,16 +874,6 @@ function loadUserPreset(slot, presetData) {
     els.flavorSelect.value = presetData.flavor;
     els.flavorSelect.dispatchEvent(new Event('change'));
   }
-  if (presetData.modifications) { // LEGACY (no-op once checkboxes are gone)
-    if (els.sugarFreeCheckbox) {
-      els.sugarFreeCheckbox.checked = !!presetData.modifications.sugarFree;
-      els.sugarFreeCheckbox.dispatchEvent(new Event('change'));
-    }
-    if (els.noCitricAcidCheckbox) {
-      els.noCitricAcidCheckbox.checked = !!presetData.modifications.noCitricAcid;
-      els.noCitricAcidCheckbox.dispatchEvent(new Event('change'));
-    }
-  }
   // renderSelected / updateServingSize / updateSubmitButtonState / closeIngredientSelector
   // live in the DOMContentLoaded scope and are exposed on window at the bottom of this file.
   if (window.renderSelected) window.renderSelected();
@@ -935,8 +917,6 @@ document.addEventListener("DOMContentLoaded", function () {
     };
   }
 
-  let sugarFree = 0;      // LEGACY
-  let noCitricAcid = 0;   // LEGACY
   let pricingTimeout = null;
 
   function debouncedUpdateSubtotal() {
@@ -1083,25 +1063,12 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  function getModifiedFlavor(baseFlavor) { // LEGACY
-    if (!baseFlavor) return "";
-    let label = baseFlavor;
-    const mods = [];
-    if (sugarFree) mods.push("Reduced Sugar");
-    if (noCitricAcid) mods.push("No Citric Acid");
-    if (mods.length > 0) label += ` (${mods.join(", ")})`;
-    return label;
-  }
-
   els.flavorSelect?.addEventListener("change", (ev) => {
     flavor = ev.target.value;
     updateServingSize();
     debouncedUpdateSubtotal();
     updateSubmitButtonState();
   });
-  els.sugarFreeCheckbox?.addEventListener("change", (ev) => { sugarFree = ev.target.checked; updateSubmitButtonLink(); }); // LEGACY
-  els.noCitricAcidCheckbox?.addEventListener("change", (ev) => { noCitricAcid = ev.target.checked; updateSubmitButtonLink(); }); // LEGACY
-  els.reducedSugarCheckbox?.addEventListener("change", () => { updateCaloriesDisplay(); }); // LEGACY
 
   els.ingredientList?.querySelectorAll(".ingredient-item").forEach(item => {
     item.addEventListener("click", () => {
@@ -1300,7 +1267,7 @@ document.addEventListener("DOMContentLoaded", function () {
       cartUrl += `&Ingredient${i + 1}=${encodeURIComponent(optionValue)}`;
     });
     if (flavor) {
-      cartUrl += `&Flavor=${encodeURIComponent(getModifiedFlavor(flavor))}`;
+      cartUrl += `&Flavor=${encodeURIComponent(flavor)}`;
     }
     els.submitBtn.setAttribute("href", cartUrl);
   }
@@ -1345,16 +1312,12 @@ document.addEventListener("DOMContentLoaded", function () {
     setTimeout(() => {
       selected = [];
       flavor = null;
-      sugarFree = 0;
-      noCitricAcid = 0;
       renderSelected();
       updateServingSize();
       updatePriceInfo();
       updateCaloriesDisplay();
       updateSubmitButtonState();
       els.flavorSelect.value = "";
-      if (els.sugarFreeCheckbox) els.sugarFreeCheckbox.checked = false;
-      if (els.noCitricAcidCheckbox) els.noCitricAcidCheckbox.checked = false;
       updateMiniCartCount();
     }, 1000);
   });
@@ -1484,7 +1447,6 @@ document.addEventListener("DOMContentLoaded", function () {
       name: presetName,
       ingredients: selected.map(item => ({ name: item.name, dosage: item.dosage, costPerGram: item.costPerGram })),
       flavor: flavor,
-      modifications: { sugarFree, noCitricAcid }, // LEGACY
       createdDate: new Date().toISOString()
     };
     savePreset(slot, presetData).then(success => {
