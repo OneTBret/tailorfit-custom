@@ -14,6 +14,7 @@ const NETLIFY_FUNCTION_URL = 'https://userpresets.netlify.app/.netlify/functions
 const FOXY_PORTAL_SETTINGS_URL = 'https://tailorfit.foxycart.com/customer_portal_settings';
 const FOXY_PORTAL_BASE_URL = 'https://tailorfit.foxycart.com/s/customer/';
 const FOXY_SSO_FUNCTION_URL = 'https://userpresets.netlify.app/.netlify/functions/foxy-sso';
+const FOXY_LAST_ORDER_FUNCTION_URL = 'https://userpresets.netlify.app/.netlify/functions/foxy-last-order';
 
 const SERVINGS = 30; // servings per tub: converts per-serving dosage -> total weight
 
@@ -258,7 +259,8 @@ const els = {
   presetInput1: document.getElementById("preset-1"),
   presetInput2: document.getElementById("preset-2"),
   presetInput3: document.getElementById("preset-3"),
-  loginText: document.getElementById("login-text")
+  loginText: document.getElementById("login-text"),
+  lastOrderBtn: document.getElementById("last-order-button")
 };
 
 // ---------- Cookie / JWT / customer-id helpers ----------
@@ -839,6 +841,7 @@ function populateUserPresets() {
   const userPresets = document.getElementById('user-presets');
   if (loginPrompt) loginPrompt.style.display = 'none';
   if (userPresets) userPresets.style.display = 'block';
+  if (els.lastOrderBtn) els.lastOrderBtn.style.display = "block";
   loadPresets().then(presets => {
     const template = document.getElementById('preset-button-template');
     if (!userPresets || !template) return;
@@ -884,11 +887,64 @@ function loadUserPreset(slot, presetData) {
   if (window.closeIngredientSelector) window.closeIngredientSelector();
 }
 
+// Convert a cart-option dose label ("5.00g" / "500mg") back to grams.
+function parseDoseToGrams(label) {
+  if (!label) return 0;
+  const s = String(label).trim().toLowerCase();
+  const num = parseFloat(s.replace(/[^0-9.]/g, "")) || 0;
+  return s.endsWith("mg") ? num / 1000 : num; // "g" or bare = grams
+}
+
+// Build a preset-shaped object from a Foxy "Custom" line item and load it
+// into the builder by reusing the existing loadUserPreset() path.
+function loadLastOrderFromItem(item) {
+  const ingredients = [];
+  (item.options || []).forEach(opt => {
+    if (!/^Ingredient\d+$/i.test(opt.name)) return;          // value: "Creatine Monohydrate - 5.00g"
+    const sep = opt.value.lastIndexOf(" - ");
+    if (sep === -1) return;
+    const name = opt.value.slice(0, sep).trim();
+    const dosage = parseDoseToGrams(opt.value.slice(sep + 3));
+    if (!name || !(dosage > 0)) return;
+    const cmsItem = els.ingredientList?.querySelector(`.ingredient-item[data-name="${name}"]`);
+    const costPerGram = cmsItem ? parseFloat(cmsItem.dataset.costPerGram) || 0 : 0;
+    ingredients.push({ name, dosage, costPerGram });
+  });
+  if (ingredients.length === 0) return false;
+  const flavorOpt = (item.options || []).find(o => o.name === "Flavor");
+  loadUserPreset("last-order", { name: "Last Order", ingredients, flavor: flavorOpt ? flavorOpt.value : null });
+  return true;
+}
+
+function loadLastOrder() {
+  getCustomerIdFromPortal().then(customerId => {
+    if (!customerId) { alert("Please log in to load your last order."); return; }
+    fetch(`${FOXY_LAST_ORDER_FUNCTION_URL}?customerId=${encodeURIComponent(customerId)}`)
+      .then(res => res.json())
+      .then(data => {
+        if (!data.success) { console.error("Last order error:", data.error); alert("Sorry, we couldn't load your last order."); return; }
+        if (!data.found)   { alert("We couldn't find a previous order on your account."); return; }
+        const customItem = (data.order.items || []).find(it =>
+          it.name === "Custom" || (it.options || []).some(o => /^Ingredient\d+$/i.test(o.name))
+        );
+        if (!customItem) {
+          alert("Your last order was one of our ready-made blends — you can re-order it from the Shop.");
+          return;
+        }
+        if (!loadLastOrderFromItem(customItem)) {
+          alert("We couldn't read the ingredients from your last order.");
+        }
+      })
+      .catch(err => { console.error("Last order fetch failed:", err); alert("Sorry, we couldn't load your last order."); });
+  });
+}
+
 function showLoginPrompt() {
   const loginPrompt = document.getElementById('login-prompt');
   const userPresets = document.getElementById('user-presets');
   if (loginPrompt) loginPrompt.style.display = 'block';
   if (userPresets) userPresets.style.display = 'none';
+  if (els.lastOrderBtn) els.lastOrderBtn.style.display = "none";
 }
 
 console.log("✅ Script loaded and executing");
@@ -1458,6 +1514,8 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     });
   });
+  els.lastOrderBtn?.addEventListener("click", (e) => { e.preventDefault(); loadLastOrder(); });
+    if (els.lastOrderBtn) els.lastOrderBtn.style.display = "none"; // hidden until login confirmed
 
   // ---- Deep-link: open builder + load a preset by ?slug= ----
   const slug = getQueryParam('slug');
