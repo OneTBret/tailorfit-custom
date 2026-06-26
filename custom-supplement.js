@@ -802,7 +802,11 @@ function renderPresets(){
 /* ---------- render: saved blends (login-gated) ---------- */
 function renderUserPresets(loggedIn){
   const el=$id('userPresets'); if(!el) return;
-  if(!loggedIn){ el.innerHTML=`<span class="login-note">🔒 <b>Log in</b> to save up to 3 blends and reload past orders.</span>`; return; }
+  if(!loggedIn){
+  el.innerHTML=`<button class="up-btn ghost" id="tfDoLogin">🔒 Log in to save blends &amp; reload past orders</button>`;
+  el.querySelector('#tfDoLogin')?.addEventListener('click',()=>document.getElementById('tfLoginTrigger')?.click());
+  return;
+}
   el.innerHTML=`<span class="login-note">Loading your blends…</span>`;
   loadPresets().then(presets=>{
     let html='';
@@ -1002,10 +1006,7 @@ document.addEventListener('DOMContentLoaded', function(){
   /* saved blends + re-sync when the login modal closes */
   syncPresetUIWithLogin();
   const lm=$id('login-modal')||document.querySelector('[fs-modal-element="modal-2"]');
-  if(lm){ let was=false; const vis=()=>{ const st=getComputedStyle(lm); return st.display!=='none' && lm.offsetParent!==null; };
-    new MutationObserver(()=>{ const v=vis(); if(was&&!v) setTimeout(syncPresetUIWithLogin,400); was=v; }).observe(lm,{attributes:true,attributeFilter:['style','class']});
-    setTimeout(()=>{ was=vis(); },500); }
-
+if(lm){ let t; new MutationObserver(()=>{ clearTimeout(t); t=setTimeout(syncPresetUIWithLogin,600); }).observe(lm,{attributes:true,attributeFilter:['style','class']}); }
   /* deep link ?slug= */
   const slug=getQueryParam('slug'); if(slug){ const p=PRESETS.find(x=>x.slug===slug); if(p) setTimeout(()=>applyPreset(p),400); }
 });
