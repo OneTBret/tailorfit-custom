@@ -25,6 +25,13 @@ const pricing = {
 };
 
 // ---------- Foxy customer portal + SSO ----------
+function openLogin(){ document.getElementById('tfLoginTrigger')?.click(); }
+function updateSaveButton(loggedIn){
+  const b=$id('savePreset'); if(!b) return;
+  b.dataset.loggedIn = loggedIn ? '1' : '0';
+  b.textContent = loggedIn ? '★ Save as preset' : '🔒 Log in to save as preset';
+}
+
 function findFoxyPortal() {
   const portalWrapper = document.getElementById('foxy-customer-portal') ||
     document.querySelector('#login-modal #foxy-customer-portal');
@@ -803,10 +810,11 @@ function renderPresets(){
 function renderUserPresets(loggedIn){
   const el=$id('userPresets'); if(!el) return;
   if(!loggedIn){
-  el.innerHTML=`<button class="up-btn ghost" id="tfDoLogin">🔒 Log in to save blends &amp; reload past orders</button>`;
-  el.querySelector('#tfDoLogin')?.addEventListener('click',()=>document.getElementById('tfLoginTrigger')?.click());
-  return;
-}
+    el.innerHTML=`<button class="up-btn ghost" id="tfDoLogin">🔒 Log in</button>
+      <span class="login-note">to save up to 3 blends &amp; reload past orders.</span>`;
+    el.querySelector('#tfDoLogin')?.addEventListener('click', openLogin);
+    return;
+  }
   el.innerHTML=`<span class="login-note">Loading your blends…</span>`;
   loadPresets().then(presets=>{
     let html='';
@@ -820,7 +828,7 @@ function renderUserPresets(loggedIn){
 }
 function showLoginPrompt(){ renderUserPresets(false); }
 function populateUserPresets(){ renderUserPresets(true); }
-function syncPresetUIWithLogin(){ checkFoxyLoginStatus().then(li=>renderUserPresets(li)); }
+function syncPresetUIWithLogin(){ checkFoxyLoginStatus().then(li=>{ renderUserPresets(li); updateSaveButton(li); }); }
 
 /* ---------- apply a blend (shared by presets / saved / last order) ---------- */
 function applyBlend(items, flavorName){
@@ -993,19 +1001,17 @@ document.addEventListener('DOMContentLoaded', function(){
   /* Save as preset → existing 3-slot Foxy modal */
   const modal=()=>$id('fs-modal-2-popup');
   $id('savePreset')?.addEventListener('click',()=>{ if(!selected.length){ toast('Add ingredients first'); return; } loadPresets().then(populatePresetInputs); const m=modal(); if(m) m.style.display='flex'; });
-  $id('save-preset')?.addEventListener('click',()=>{
-    let slot=null,name=''; const i1=$id('preset-1'),i2=$id('preset-2'),i3=$id('preset-3');
-    if(i1&&i1.value.trim()){slot=1;name=i1.value.trim();} else if(i2&&i2.value.trim()){slot=2;name=i2.value.trim();} else if(i3&&i3.value.trim()){slot=3;name=i3.value.trim();}
-    if(!slot){ alert('Please enter a name for your preset in one of the fields.'); return; }
-    if(!selected.length){ alert('Please add ingredients before saving a preset.'); return; }
-    const data={ name, ingredients:selected.map(s=>({name:s.name,dosage:s.dosage,costPerGram:(byName[s.name]||{}).cost||0})), flavor, createdDate:new Date().toISOString() };
-    savePreset(slot,data).then(ok=>{ if(ok){ alert(`Preset "${name}" saved!`); const m=modal(); if(m) m.style.display='none'; syncPresetUIWithLogin(); } else alert('Error saving preset. Please try again.'); });
+  $id('savePreset')?.addEventListener('click',()=>{
+    if($id('savePreset').dataset.loggedIn!=='1'){ openLogin(); return; }   // not logged in → open login modal
+    if(!selected.length){ toast('Add ingredients first'); return; }
+    loadPresets().then(populatePresetInputs);
+    const m=$id('fs-modal-2-popup'); if(m) m.style.display='flex';          // logged in → open save modal
   });
   $id('close-preset-modal')?.addEventListener('click',()=>{ const m=modal(); if(m) m.style.display='none'; });
 
   /* saved blends + re-sync when the login modal closes */
   syncPresetUIWithLogin();
-  const lm=$id('login-modal')||document.querySelector('[fs-modal-element="modal-2"]');
+ const lm=$id('login-modal')||document.querySelector('[fs-modal-element="modal-2"]');
 if(lm){ let t; new MutationObserver(()=>{ clearTimeout(t); t=setTimeout(syncPresetUIWithLogin,600); }).observe(lm,{attributes:true,attributeFilter:['style','class']}); }
   /* deep link ?slug= */
   const slug=getQueryParam('slug'); if(slug){ const p=PRESETS.find(x=>x.slug===slug); if(p) setTimeout(()=>applyPreset(p),400); }
