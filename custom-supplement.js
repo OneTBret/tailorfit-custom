@@ -656,11 +656,11 @@ function loadPresets() {
 }
 
 function populatePresetInputs(presets) {
-  ['1', '2', '3'].forEach(slot => {
-    const input = els[`presetInput${slot}`];
+  ['1','2','3'].forEach(slot => {
+    const input = document.getElementById('preset-' + slot);
     if (input) {
-      input.value = "";
-      input.placeholder = presets[`p${slot}`] ? presets[`p${slot}`].name : `Preset ${slot}`;
+      input.value = '';
+      input.placeholder = presets['p'+slot] ? presets['p'+slot].name : `Preset ${slot}`;
     }
   });
 }
@@ -1000,7 +1000,6 @@ document.addEventListener('DOMContentLoaded', function(){
 
   /* Save as preset → existing 3-slot Foxy modal */
   const modal=()=>$id('fs-modal-2-popup');
-  $id('savePreset')?.addEventListener('click',()=>{ if(!selected.length){ toast('Add ingredients first'); return; } loadPresets().then(populatePresetInputs); const m=modal(); if(m) m.style.display='flex'; });
   $id('savePreset')?.addEventListener('click',()=>{
     if($id('savePreset').dataset.loggedIn!=='1'){ openLogin(); return; }   // not logged in → open login modal
     if(!selected.length){ toast('Add ingredients first'); return; }
