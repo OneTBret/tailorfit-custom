@@ -788,21 +788,48 @@ function flavorPrice(){ const f=FLAVORS.find(x=>x.name===flavor); return f ? f.p
 function calcCalories(){ let t=0; selected.forEach(s=>{ const ing=byName[s.name]; if(ing) t+=s.dosage*(ing.cal||0); }); const f=FLAVORS.find(x=>x.name===flavor); if(f) t+=f.cal||0; return Math.round(t); }
 function servingSize(){ let w=selected.reduce((a,s)=>a+(s.dosage||0),0); const f=FLAVORS.find(x=>x.name===flavor); if(f) w+=f.weight||0; return w; }
 
+/* ---------- Mobile UI ---------- */
+function injectPresetCSS(){
+  if(document.getElementById('tfp-styles')) return;
+  const s=document.createElement('style'); s.id='tfp-styles';
+  s.textContent=`
+    #tf-builder .preset-card{cursor:pointer}
+    #tf-builder .preset-card .info{display:none;position:absolute;top:14px;right:14px;width:26px;height:26px;border-radius:50%;border:1.5px solid var(--line);background:var(--panel-2);color:var(--text-soft);font-style:italic;font-weight:800;font-size:13px;line-height:1;align-items:center;justify-content:center;cursor:pointer;z-index:3}
+    #tf-builder .preset-card .info:hover{border-color:var(--teal);color:#fff}
+    @media (max-width:767px){
+      #tf-builder .preset-rail{display:flex;flex-direction:column;overflow-x:visible;gap:10px;scroll-snap-type:none}
+      #tf-builder .preset-card{padding:14px 50px 14px 16px;gap:6px}
+      #tf-builder .preset-card .info{display:flex}
+      #tf-builder .preset-card .desc{display:none}
+      #tf-builder .preset-card.desc-open .desc{display:block;margin-top:8px}
+      #tf-builder .preset-card .apply{display:none}
+    }
+  `;
+  document.head.appendChild(s);
+}
+
 /* ---------- render: Tailor Fit presets ---------- */
 function renderPresets(){
   const rail=$id('presetRail'); if(!rail) return;
+  injectPresetCSS();
   const tagCls=t=>t.includes('pre')&&t.includes('post')?'both':t.includes('post')?'post':'pre';
   const tagLbl=t=>t.includes('pre')&&t.includes('post')?'Pre / Post':t.includes('post')?'Post-Workout':t.includes('pre')?'Pre-Workout':'Blend';
   rail.innerHTML=PRESETS.map((p,i)=>`
-    <div class="preset-card" data-i="${i}">
+    <div class="preset-card" data-i="${i}" role="button" tabindex="0">
       <span class="accent"></span>
+      <button class="info" type="button" aria-label="About this blend">i</button>
       <span class="tag ${tagCls(p.type)}">${tagLbl(p.type)}</span>
       <h3>${esc(p.name)}</h3>
       <div class="desc">${esc(p.desc)}</div>
       <div class="meta">${p.amounts.length} ingredients</div>
       <button class="apply">Load this blend</button>
     </div>`).join('');
-  rail.querySelectorAll('.preset-card').forEach(c=>c.querySelector('.apply').addEventListener('click',()=>applyPreset(PRESETS[+c.dataset.i])));
+  rail.querySelectorAll('.preset-card').forEach(c=>{
+    const load=()=>applyPreset(PRESETS[+c.dataset.i]);
+    c.addEventListener('click', load);
+    c.addEventListener('keydown', e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); load(); } });
+    c.querySelector('.info')?.addEventListener('click', e=>{ e.stopPropagation(); e.preventDefault(); c.classList.toggle('desc-open'); });
+  });
 }
 
 /* ---------- render: saved blends (login-gated) ---------- */
