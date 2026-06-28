@@ -975,7 +975,8 @@ function renderSummary(){
   const price = n ? calcPrice(pricedItems()) + flavorPrice() : 0;
   const sub=$id('subtotal'); if(sub) sub.textContent=`$${price.toFixed(2)}`;
   const per=$id('perServ'); if(per) per.textContent = n ? `$${(price/SERVINGS).toFixed(2)} / serving` : '—';
-  renderTaste();
+  // renderTaste();  // ⛔ taste/flavor profile disabled — calc accuracy TBD, re-enable later
+  const tasteBox = $id('taste'); if (tasteBox) tasteBox.style.display = 'none';
   const ok=n>=3 && !!flavor, btn=$id('addCart');
   if(btn){ btn.disabled=!ok; btn.textContent = ok ? `Add to Cart · $${price.toFixed(2)}` : (n<3?'Add 3+ ingredients':'Choose a flavor'); }
   const fc=$id('fabCount'); if(fc){ fc.style.display=n?'inline-flex':'none'; fc.textContent=n; }
