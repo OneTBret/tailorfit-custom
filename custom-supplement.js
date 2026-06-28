@@ -25,7 +25,6 @@ const pricing = {
 };
 
 // ---------- Foxy customer portal + SSO ----------
-function openLogin(){ document.getElementById('tfLoginTrigger')?.click(); }
 function updateSaveButton(loggedIn){
   const b=$id('savePreset'); if(!b) return;
   b.dataset.loggedIn = loggedIn ? '1' : '0';
@@ -982,6 +981,90 @@ function toast(msg){ const wrap=$id('toasts'); if(!wrap) return; const t=documen
 function openDrawer(){ $id('catalogPanel')?.classList.add('open'); document.body.classList.add('tf-drawer-open'); }
 function closeDrawer(){ $id('catalogPanel')?.classList.remove('open'); document.body.classList.remove('tf-drawer-open'); }
 
+/* ============ Native modals (login + save-preset) ============ */
+function injectModalCSS(){
+  if(document.getElementById('tfm-styles')) return;
+  const s=document.createElement('style'); s.id='tfm-styles';
+  s.textContent=`
+    .tfm-overlay{position:fixed;inset:0;z-index:2147483000;display:none;align-items:center;justify-content:center;background:rgba(8,10,10,.72);padding:20px;font-family:Arial,"Helvetica Neue",Helvetica,sans-serif}
+    .tfm-overlay.open{display:flex}
+    .tfm-panel{position:relative;width:100%;max-width:460px;max-height:90vh;overflow:auto;background:#1f2323;border:1.5px solid #34393a;border-radius:20px;box-shadow:0 22px 60px rgba(0,0,0,.5);color:#f2f5f4}
+    .tfm-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid #34393a}
+    .tfm-head h3{margin:0;font-size:16px;font-weight:900;text-transform:uppercase;letter-spacing:.08em;color:#fff}
+    .tfm-x{border:none;background:transparent;color:#b4baba;font-size:24px;line-height:1;cursor:pointer;width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center}
+    .tfm-x:hover{background:#272c2c;color:#fff}
+    .tfm-body{padding:18px}
+    .tfm-note{font-size:12.5px;color:#7e8585;margin:0 0 14px}
+    .tfm-slot{margin-bottom:10px}
+    .tfm-slot input{width:100%;border:1.5px solid #34393a;background:#171b1b;color:#f2f5f4;border-radius:12px;padding:11px 13px;font-size:14px;outline:none}
+    .tfm-slot input:focus{border-color:#5fb8b8;box-shadow:0 0 0 3px rgba(95,184,184,.18)}
+    .tfm-save{margin-top:6px;width:100%;border:none;background:#2f6f66;color:#fff;font-weight:800;padding:13px;border-radius:999px;font-size:14px;cursor:pointer}
+    .tfm-save:hover{background:#387f74}
+    .tfm-save:disabled{opacity:.6;cursor:default}
+    #tfm-login-body{min-height:120px}
+  `;
+  document.head.appendChild(s);
+}
+function openModalEl(el){ if(el) el.classList.add('open'); }
+function closeModal(el){ if(el) el.classList.remove('open'); }
+function buildNativeModals(){
+  if(document.getElementById('tfm-login')) return;
+  injectModalCSS();
+  const wrap=document.createElement('div'); wrap.id='tfm-modals';
+  wrap.innerHTML=`
+    <div class="tfm-overlay" id="tfm-login" role="dialog" aria-modal="true" aria-label="Log in">
+      <div class="tfm-panel">
+        <div class="tfm-head"><h3>Log In</h3><button class="tfm-x" type="button" data-tfm-close aria-label="Close">×</button></div>
+        <div class="tfm-body" id="tfm-login-body"></div>
+      </div>
+    </div>
+    <div class="tfm-overlay" id="tfm-save" role="dialog" aria-modal="true" aria-label="Save preset">
+      <div class="tfm-panel">
+        <div class="tfm-head"><h3>Save as preset</h3><button class="tfm-x" type="button" data-tfm-close aria-label="Close">×</button></div>
+        <div class="tfm-body">
+          <p class="tfm-note">Name your blend and save it to one of your 3 slots. A slot's current name shows as its placeholder — typing over it replaces that preset.</p>
+          <div class="tfm-slot"><input id="tfm-preset-1" type="text" maxlength="40" placeholder="Preset 1"></div>
+          <div class="tfm-slot"><input id="tfm-preset-2" type="text" maxlength="40" placeholder="Preset 2"></div>
+          <div class="tfm-slot"><input id="tfm-preset-3" type="text" maxlength="40" placeholder="Preset 3"></div>
+          <button class="tfm-save" id="tfm-save-btn" type="button">Save preset</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  // re-host the Foxy portal inside the login modal (it keeps its config + events)
+  const portal=document.getElementById('foxy-customer-portal') || document.querySelector('foxy-customer-portal');
+  if(portal) document.getElementById('tfm-login-body').appendChild(portal);
+  // close: X buttons, backdrop click, Esc
+  wrap.querySelectorAll('[data-tfm-close]').forEach(b=>b.addEventListener('click', e=>closeModal(e.target.closest('.tfm-overlay'))));
+  wrap.querySelectorAll('.tfm-overlay').forEach(ov=>ov.addEventListener('click', e=>{ if(e.target===ov) closeModal(ov); }));
+  document.addEventListener('keydown', e=>{ if(e.key==='Escape') wrap.querySelectorAll('.tfm-overlay.open').forEach(closeModal); });
+  document.getElementById('tfm-save-btn').addEventListener('click', doSavePreset);
+  // auto-close the login modal once SSO completes
+  document.addEventListener('foxy-sso-login', ()=>{ setTimeout(()=>closeModal(document.getElementById('tfm-login')), 500); });
+}
+function openLogin(){ buildNativeModals(); openModalEl(document.getElementById('tfm-login')); }
+function openSavePreset(){
+  if(!selected.length){ toast('Add ingredients first'); return; }
+  buildNativeModals();
+  loadPresets().then(presets=>{
+    ['1','2','3'].forEach(slot=>{ const inp=document.getElementById('tfm-preset-'+slot); if(inp){ inp.value=''; inp.placeholder = presets['p'+slot] ? presets['p'+slot].name : `Preset ${slot}`; } });
+  });
+  openModalEl(document.getElementById('tfm-save'));
+}
+function doSavePreset(){
+  let slot=null, name='';
+  ['1','2','3'].forEach(s=>{ const inp=document.getElementById('tfm-preset-'+s); if(slot===null && inp && inp.value.trim()){ slot=s; name=inp.value.trim(); } });
+  if(!slot){ toast('Type a name in one of the slots'); return; }
+  if(!selected.length){ toast('Add ingredients first'); return; }
+  const btn=document.getElementById('tfm-save-btn'); btn.disabled=true; btn.textContent='Saving…';
+  const data={ name, ingredients:selected.map(s=>({name:s.name,dosage:s.dosage,costPerGram:(byName[s.name]||{}).cost||0})), flavor, createdDate:new Date().toISOString() };
+  savePreset(slot, data).then(ok=>{
+    btn.disabled=false; btn.textContent='Save preset';
+    if(ok){ toast(`Saved “${name}”`); closeModal(document.getElementById('tfm-save')); syncPresetUIWithLogin(); }
+    else { toast('Could not save — please try again'); }
+  });
+}
+
 /* ---------- init ---------- */
 document.addEventListener('DOMContentLoaded', function(){
   if(!$id('tf-builder')) return;                       // not on the builder page
@@ -999,19 +1082,11 @@ document.addEventListener('DOMContentLoaded', function(){
   window.addEventListener('resize',()=>{ if(window.innerWidth>900) closeDrawer(); });
 
   /* Save as preset → existing 3-slot Foxy modal */
-  const modal=()=>$id('fs-modal-2-popup');
+  buildNativeModals();   // builds the shells + moves the Foxy portal in
   $id('savePreset')?.addEventListener('click',()=>{
-    if($id('savePreset').dataset.loggedIn!=='1'){ openLogin(); return; }   // not logged in → open login modal
-    if(!selected.length){ toast('Add ingredients first'); return; }
-    loadPresets().then(populatePresetInputs);
-    const m=$id('fs-modal-2-popup'); if(m) m.style.display='flex';          // logged in → open save modal
+    if($id('savePreset').dataset.loggedIn!=='1'){ openLogin(); return; }   // not logged in → login modal
+    openSavePreset();                                                       // logged in → save modal
   });
-  $id('close-preset-modal')?.addEventListener('click',()=>{ const m=modal(); if(m) m.style.display='none'; });
-
-  /* saved blends + re-sync when the login modal closes */
-  syncPresetUIWithLogin();
- const lm=$id('login-modal')||document.querySelector('[fs-modal-element="modal-2"]');
-if(lm){ let t; new MutationObserver(()=>{ clearTimeout(t); t=setTimeout(syncPresetUIWithLogin,600); }).observe(lm,{attributes:true,attributeFilter:['style','class']}); }
   /* deep link ?slug= */
   const slug=getQueryParam('slug'); if(slug){ const p=PRESETS.find(x=>x.slug===slug); if(p) setTimeout(()=>applyPreset(p),400); }
 });
