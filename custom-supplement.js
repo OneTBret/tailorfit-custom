@@ -1002,7 +1002,7 @@ function injectModalCSS(){
     .tfm-save:hover{background:#387f74}
     .tfm-save:disabled{opacity:.6;cursor:default}
     #tfm-login-body{min-height:120px}
-    #tfm-login .tfm-panel{background:#fff;color:#15201e;border-color:#d9dede;max-width:520px}
+    #tfm-login .tfm-panel{background:#fff;color:#15201e;border-color:#d9dede;max-width:900px}
     #tfm-login .tfm-head{border-color:#e8ecec}
     #tfm-login .tfm-head h3{color:#10201c}
     #tfm-login .tfm-x{color:#6b7470}
@@ -1044,8 +1044,6 @@ function buildNativeModals(){
   wrap.querySelectorAll('.tfm-overlay').forEach(ov=>ov.addEventListener('click', e=>{ if(e.target===ov) closeModal(ov); }));
   document.addEventListener('keydown', e=>{ if(e.key==='Escape') wrap.querySelectorAll('.tfm-overlay.open').forEach(closeModal); });
   document.getElementById('tfm-save-btn').addEventListener('click', doSavePreset);
-  // auto-close the login modal once SSO completes
-  document.addEventListener('foxy-sso-login', ()=>{ setTimeout(()=>closeModal(document.getElementById('tfm-login')), 500); });
 }
 function openLogin(){
   buildNativeModals();
@@ -1055,7 +1053,7 @@ function openLogin(){
     const m=document.getElementById('tfm-login');
     if(!m || !m.classList.contains('open') || ++tries>30){ clearInterval(window.__tfLoginPoll); return; }
     checkFoxyLoginStatus().then(li=>{
-      if(li){ clearInterval(window.__tfLoginPoll); closeModal(m); syncPresetUIWithLogin(); }
+      if(li){ clearInterval(window.__tfLoginPoll); syncPresetUIWithLogin(); }  // refresh blends; leave modal open to view account/orders
     });
   }, 2000);
 }
