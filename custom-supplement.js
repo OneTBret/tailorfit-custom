@@ -1002,6 +1002,11 @@ function injectModalCSS(){
     .tfm-save:hover{background:#387f74}
     .tfm-save:disabled{opacity:.6;cursor:default}
     #tfm-login-body{min-height:120px}
+    #tfm-login .tfm-panel{background:#fff;color:#15201e;border-color:#d9dede;max-width:520px}
+    #tfm-login .tfm-head{border-color:#e8ecec}
+    #tfm-login .tfm-head h3{color:#10201c}
+    #tfm-login .tfm-x{color:#6b7470}
+    #tfm-login .tfm-x:hover{background:#eef1f1;color:#10201c}
   `;
   document.head.appendChild(s);
 }
@@ -1042,7 +1047,18 @@ function buildNativeModals(){
   // auto-close the login modal once SSO completes
   document.addEventListener('foxy-sso-login', ()=>{ setTimeout(()=>closeModal(document.getElementById('tfm-login')), 500); });
 }
-function openLogin(){ buildNativeModals(); openModalEl(document.getElementById('tfm-login')); }
+function openLogin(){
+  buildNativeModals();
+  openModalEl(document.getElementById('tfm-login'));
+  let tries=0; clearInterval(window.__tfLoginPoll);
+  window.__tfLoginPoll=setInterval(()=>{
+    const m=document.getElementById('tfm-login');
+    if(!m || !m.classList.contains('open') || ++tries>30){ clearInterval(window.__tfLoginPoll); return; }
+    checkFoxyLoginStatus().then(li=>{
+      if(li){ clearInterval(window.__tfLoginPoll); closeModal(m); syncPresetUIWithLogin(); }
+    });
+  }, 2000);
+}
 function openSavePreset(){
   if(!selected.length){ toast('Add ingredients first'); return; }
   buildNativeModals();
@@ -1083,6 +1099,7 @@ document.addEventListener('DOMContentLoaded', function(){
 
   /* Save as preset → existing 3-slot Foxy modal */
   buildNativeModals();   // builds the shells + moves the Foxy portal in
+  syncPresetUIWithLogin();
   $id('savePreset')?.addEventListener('click',()=>{
     if($id('savePreset').dataset.loggedIn!=='1'){ openLogin(); return; }   // not logged in → login modal
     openSavePreset();                                                       // logged in → save modal
