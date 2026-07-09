@@ -964,24 +964,29 @@ function renderFlavors(){
   box.querySelectorAll('.fl').forEach(b=>b.addEventListener('click',()=>{ flavor=b.dataset.f; renderFlavors(); renderSummary(); }));
 }
 function renderSummary(){
+  injectBlendCSS();
   const list=$id('blendList');
-  if(list){ list.innerHTML=selected.map(s=>`<li class="bl-item"><span><span class="nm">${esc(s.name)}</span><span class="ds">${fmtDose(s.dosage)}</span></span><button class="rm" data-name="${esc(s.name)}" title="Remove">×</button></li>`).join('');
-    list.querySelectorAll('.rm').forEach(b=>b.addEventListener('click',()=>removeFromBlend(b.dataset.name))); }
-  const n=selected.length, pct=Math.min(100,(n/3)*100);
-  const bar=$id('progBar'); if(bar) bar.style.width=pct+'%';
-  const note=$id('progNote'); if(note){ if(n>=3){ note.textContent=`✓ ${n} ingredients — ready when you are`; note.classList.add('ready'); } else { note.textContent=`Add at least 3 ingredients to continue (${n}/3)`; note.classList.remove('ready'); } }
-  const ss=$id('servingSize'); if(ss) ss.textContent=fmtDose(servingSize());
-  const cal=$id('calories'); if(cal) cal.textContent=calcCalories();
-  const price = n ? calcPrice(pricedItems()) + flavorPrice() : 0;
-  const sub=$id('subtotal'); if(sub) sub.textContent=`$${price.toFixed(2)}`;
-  const per=$id('perServ'); if(per) per.textContent = n ? `$${(price/SERVINGS).toFixed(2)} / serving` : '—';
-  // renderTaste();  // ⛔ taste/flavor profile disabled — calc accuracy TBD, re-enable later
-  const tasteBox = $id('taste'); if (tasteBox) tasteBox.style.display = 'none';
-  const ok=n>=3 && !!flavor, btn=$id('addCart');
-  if(btn){ btn.disabled=!ok; btn.textContent = ok ? `Add to Cart · $${price.toFixed(2)}` : (n<3?'Add 3+ ingredients':'Choose a flavor'); }
-  const fc=$id('fabCount'); if(fc){ fc.style.display=n?'inline-flex':'none'; fc.textContent=n; }
-  const dc=$id('doneCatalog'); if(dc) dc.textContent = n?`Done · ${n} in blend`:'Done';
+  if(list){
+    list.innerHTML=selected.map(s=>`
+      <li class="bl-item" data-name="${esc(s.name)}">
+        <div class="bl-row">
+          <span><span class="nm">${esc(s.name)}</span><span class="ds">${fmtDose(s.dosage)}</span></span>
+          <span class="bl-actions">
+            <button class="edit" type="button" title="Edit dose" aria-label="Edit dose">✎</button>
+            <button class="rm" type="button" data-name="${esc(s.name)}" title="Remove" aria-label="Remove">×</button>
+          </span>
+        </div>
+        <div class="bl-editor">
+          <input type="range" aria-label="Dose">
+          <div class="bl-editrow"><span class="bl-suggested"></span><span class="bl-doseval"></span></div>
+        </div>
+      </li>`).join('');
+    list.querySelectorAll('.bl-item .rm').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); removeFromBlend(b.dataset.name); }));
+    wireBlendEditors(list);
+  }
+  updateStats();
 }
+
 function renderTaste(){
   const box=$id('taste'); if(!box) return;
   if(!selected.length){ box.style.display='none'; return; } box.style.display='block';
@@ -1008,6 +1013,75 @@ function addToCart(){
 function toast(msg){ const wrap=$id('toasts'); if(!wrap) return; const t=document.createElement('div'); t.className='toast'; t.innerHTML=`<span class="ic">✓</span>${esc(msg)}`; wrap.appendChild(t); setTimeout(()=>t.remove(),2800); }
 function openDrawer(){ $id('catalogPanel')?.classList.add('open'); document.body.classList.add('tf-drawer-open'); }
 function closeDrawer(){ $id('catalogPanel')?.classList.remove('open'); document.body.classList.remove('tf-drawer-open'); }
+
+function injectBlendCSS(){
+  if(document.getElementById('tfb-blend-styles')) return;
+  const s=document.createElement('style'); s.id='tfb-blend-styles';
+  s.textContent=`
+    #tf-builder .bl-item{flex-direction:column;align-items:stretch}
+    #tf-builder .bl-row{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%}
+    #tf-builder .bl-actions{display:flex;align-items:center;gap:2px}
+    #tf-builder .bl-item .edit{border:none;background:transparent;color:var(--muted);font-size:13px;line-height:1;padding:2px 6px;border-radius:6px;cursor:pointer}
+    #tf-builder .bl-item .edit:hover{color:var(--teal);background:var(--panel-hi)}
+    #tf-builder .bl-item .edit.active{color:var(--teal)}
+    #tf-builder .bl-editor{display:none;padding-top:10px;margin-top:8px;border-top:1px dashed var(--line)}
+    #tf-builder .bl-item.editing .bl-editor{display:block}
+    #tf-builder .bl-editor input[type=range]{width:100%}
+    #tf-builder .bl-editrow{display:flex;justify-content:space-between;align-items:center;margin-top:4px}
+    #tf-builder .bl-suggested{font-size:11px;color:var(--muted)}
+    #tf-builder .bl-doseval{font-size:14px;font-weight:800;color:var(--teal)}
+  `;
+  document.head.appendChild(s);
+}
+
+function updateStats(){
+  const n=selected.length, pct=Math.min(100,(n/3)*100);
+  const bar=$id('progBar'); if(bar) bar.style.width=pct+'%';
+  const note=$id('progNote'); if(note){ if(n>=3){ note.textContent=`✓ ${n} ingredients — ready when you are`; note.classList.add('ready'); } else { note.textContent=`Add at least 3 ingredients to continue (${n}/3)`; note.classList.remove('ready'); } }
+  const ss=$id('servingSize'); if(ss) ss.textContent=fmtDose(servingSize());
+  const cal=$id('calories'); if(cal) cal.textContent=calcCalories();
+  const price = n ? calcPrice(pricedItems()) + flavorPrice() : 0;
+  const sub=$id('subtotal'); if(sub) sub.textContent=`$${price.toFixed(2)}`;
+  const per=$id('perServ'); if(per) per.textContent = n ? `$${(price/SERVINGS).toFixed(2)} / serving` : '—';
+  const ok=n>=3 && !!flavor, btn=$id('addCart');
+  if(btn){ btn.disabled=!ok; btn.textContent = ok ? `Add to Cart · $${price.toFixed(2)}` : (n<3?'Add 3+ ingredients':'Choose a flavor'); }
+  const fc=$id('fabCount'); if(fc){ fc.style.display=n?'inline-flex':'none'; fc.textContent=n; }
+  const dc=$id('doneCatalog'); if(dc) dc.textContent = n?`Done · ${n} in blend`:'Done';
+  // renderTaste();  // ⛔ taste/flavor profile disabled — calc accuracy TBD, re-enable later
+  const tasteBox=$id('taste'); if(tasteBox) tasteBox.style.display='none';   // taste profile stays disabled
+}
+
+function wireBlendEditors(list){
+  list.querySelectorAll('.bl-item').forEach(item=>{
+    const name=item.dataset.name, ing=byName[name]; if(!ing) return;
+    const editBtn=item.querySelector('.edit'), range=item.querySelector('input[type=range]');
+    const doseVal=item.querySelector('.bl-doseval'), sug=item.querySelector('.bl-suggested');
+    const isMg=ing.max<1, toG=v=>isMg?v/1000:v;
+    function setup(){
+      let min=ing.min,max=ing.max,steps=ing.steps>1?ing.steps:10;
+      if(isMg){min*=1000;max*=1000;} if(!(max>min)) max=min+1;
+      const cur=selected.find(s=>s.name===name);
+      range.min=min; range.max=max; let step=(max-min)/(steps-1); if(!(step>0)) step=1; range.step=step;
+      range.value = cur ? (isMg?cur.dosage*1000:cur.dosage) : min;
+      sug.textContent=`Range ${fmtDose(ing.min)} – ${fmtDose(ing.max)}`; upd();
+    }
+    function upd(){
+      const g=toG(parseFloat(range.value));
+      doseVal.textContent=fmtDose(g);
+      range.style.backgroundSize=`${((range.value-range.min)/((range.max-range.min)||1))*100}% 100%`;
+      const idx=selected.findIndex(s=>s.name===name); if(idx!==-1) selected[idx].dosage=g;  // live-commit
+      const ds=item.querySelector('.ds'); if(ds) ds.textContent=fmtDose(g);
+      updateStats();  // refresh price/calories/serving without rebuilding the list
+    }
+    range.addEventListener('input',upd);
+    editBtn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const open=item.classList.contains('editing');
+      list.querySelectorAll('.bl-item.editing').forEach(o=>{ o.classList.remove('editing'); o.querySelector('.edit')?.classList.remove('active'); });
+      if(!open){ item.classList.add('editing'); editBtn.classList.add('active'); setup(); }
+    });
+  });
+}
 
 /* ============ Native modals (login + save-preset) ============ */
 function injectModalCSS(){
