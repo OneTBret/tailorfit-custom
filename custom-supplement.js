@@ -158,6 +158,38 @@ function getSessionToken() {
   return t;
 }
 
+// Ensures a valid session token exists, minting one via foxy-sso from the Foxy customer
+// portal's session JWT when needed. The `foxy-sso-login` event does not fire reliably in
+// this portal, so we read the JWT straight from the portal's localStorage `session`.
+async function ensureSessionToken() {
+  const existing = getSessionToken();
+  if (existing) return existing;
+  let jwt = null;
+  try { jwt = (JSON.parse(localStorage.getItem('session') || '{}') || {}).jwt || null; } catch (e) {}
+  if (!jwt) return null;
+  try {
+    const res = await fetch(FOXY_SSO_FUNCTION_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: jwt })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.session_token) {
+      localStorage.setItem('tf_session_token', data.session_token);
+      const sExp = parseInt(data.session_expires_in, 10);
+      localStorage.setItem('tf_session_token_expiration',
+        (Date.now() + (Number.isNaN(sExp) ? 86400 : sExp) * 1000).toString());
+      if (data.customer_id) localStorage.setItem('foxy_customer_id', String(data.customer_id));
+      if (data.customer_email) localStorage.setItem('foxy_customer_email', data.customer_email);
+      return data.session_token;
+    }
+    console.warn('🔐 Session token mint failed:', data.error || res.status);
+  } catch (e) {
+    console.error('🔐 ensureSessionToken error:', e);
+  }
+  return null;
+}
+
 bootstrapFoxyPortal();
 document.addEventListener('foxy-sso-login', handleFoxySsoLogin, { once: false });
 
@@ -611,18 +643,19 @@ function savePresetToFoxyAPI(presetSlot, presetData) {
         }).catch(() => resolve(false));
         return;
       }
-      const sessionToken = getSessionToken();
-      if (!sessionToken) { console.warn('🔐 No session token; cannot save preset to Foxy'); resolve(false); return; }
-      fetch(NETLIFY_FUNCTION_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionToken },
-        body: JSON.stringify({ slot: presetSlot, preset: presetData })
-      }).then(res => res.json()).then(data => {
-        if (data.success) { console.log("🔐 Preset saved to FoxyCart"); resolve(true); }
-        else { console.error("🔐 Failed to save preset:", data.error); resolve(false); }
-      }).catch(err => {
-        console.error("🔐 Error saving preset:", err);
-        resolve(false);
+      ensureSessionToken().then(sessionToken => {
+        if (!sessionToken) { console.warn('🔐 No session token; cannot save preset to Foxy'); resolve(false); return; }
+        fetch(NETLIFY_FUNCTION_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionToken },
+          body: JSON.stringify({ slot: presetSlot, preset: presetData })
+        }).then(res => res.json()).then(data => {
+          if (data.success) { console.log("🔐 Preset saved to FoxyCart"); resolve(true); }
+          else { console.error("🔐 Failed to save preset:", data.error); resolve(false); }
+        }).catch(err => {
+          console.error("🔐 Error saving preset:", err);
+          resolve(false);
+        });
       });
     });
   });
@@ -636,18 +669,19 @@ function loadPresetsFromFoxyAPI() {
         resolve({ p1: null, p2: null, p3: null });
         return;
       }
-      const sessionToken = getSessionToken();
-      if (!sessionToken) { resolve({ p1: null, p2: null, p3: null }); return; }
-      fetch(NETLIFY_FUNCTION_URL, { headers: { 'Authorization': 'Bearer ' + sessionToken } }).then(res => res.json()).then(data => {
-        if (data.success && data.presets) {
-          console.log("🔐 Presets loaded from FoxyCart:", data.presets);
-          resolve({ p1: data.presets['1'] || null, p2: data.presets['2'] || null, p3: data.presets['3'] || null });
-        } else {
+      ensureSessionToken().then(sessionToken => {
+        if (!sessionToken) { resolve({ p1: null, p2: null, p3: null }); return; }
+        fetch(NETLIFY_FUNCTION_URL, { headers: { 'Authorization': 'Bearer ' + sessionToken } }).then(res => res.json()).then(data => {
+          if (data.success && data.presets) {
+            console.log("🔐 Presets loaded from FoxyCart:", data.presets);
+            resolve({ p1: data.presets['1'] || null, p2: data.presets['2'] || null, p3: data.presets['3'] || null });
+          } else {
+            resolve({ p1: null, p2: null, p3: null });
+          }
+        }).catch(err => {
+          console.error("🔐 Error loading presets:", err);
           resolve({ p1: null, p2: null, p3: null });
-        }
-      }).catch(err => {
-        console.error("🔐 Error loading presets:", err);
-        resolve({ p1: null, p2: null, p3: null });
+        });
       });
     }).catch(err => {
       console.error("🔐 Error obtaining customer ID:", err);
@@ -720,25 +754,26 @@ function parseDoseToGrams(label) {
 function loadLastOrder() {
   getCustomerIdFromPortal().then(customerId => {
     if (!customerId) { alert("Please log in to load your last order."); return; }
-    const sessionToken = getSessionToken();
-    if (!sessionToken) { alert("Please log in to load your last order."); return; }
-    fetch(FOXY_LAST_ORDER_FUNCTION_URL, { headers: { 'Authorization': 'Bearer ' + sessionToken } })
-      .then(res => res.json())
-      .then(data => {
-        if (!data.success) { console.error("Last order error:", data.error); alert("Sorry, we couldn't load your last order."); return; }
-        if (!data.found)   { alert("We couldn't find a previous order on your account."); return; }
-        const customItem = (data.order.items || []).find(it =>
-          it.name === "Custom" || (it.options || []).some(o => /^Ingredient\d+$/i.test(o.name))
-        );
-        if (!customItem) {
-          alert("Your last order was one of our ready-made blends — you can re-order it from the Shop.");
-          return;
-        }
-        if (!loadLastOrderFromItem(customItem)) {
-          alert("We couldn't read the ingredients from your last order.");
-        }
-      })
-      .catch(err => { console.error("Last order fetch failed:", err); alert("Sorry, we couldn't load your last order."); });
+    ensureSessionToken().then(sessionToken => {
+      if (!sessionToken) { alert("Please log in to load your last order."); return; }
+      fetch(FOXY_LAST_ORDER_FUNCTION_URL, { headers: { 'Authorization': 'Bearer ' + sessionToken } })
+        .then(res => res.json())
+        .then(data => {
+          if (!data.success) { console.error("Last order error:", data.error); alert("Sorry, we couldn't load your last order."); return; }
+          if (!data.found)   { alert("We couldn't find a previous order on your account."); return; }
+          const customItem = (data.order.items || []).find(it =>
+            it.name === "Custom" || (it.options || []).some(o => /^Ingredient\d+$/i.test(o.name))
+          );
+          if (!customItem) {
+            alert("Your last order was one of our ready-made blends — you can re-order it from the Shop.");
+            return;
+          }
+          if (!loadLastOrderFromItem(customItem)) {
+            alert("We couldn't read the ingredients from your last order.");
+          }
+        })
+        .catch(err => { console.error("Last order fetch failed:", err); alert("Sorry, we couldn't load your last order."); });
+    });
   });
 }
 
