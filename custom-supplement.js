@@ -119,6 +119,13 @@ async function handleFoxySsoLogin(event) {
         }
       }
       if (data.customer_href) localStorage.setItem('foxy_customer_href', data.customer_href);
+      // Signed session token our own functions verify (foxy-presets / foxy-last-order).
+      if (data.session_token) {
+        localStorage.setItem('tf_session_token', data.session_token);
+        const sExp = parseInt(data.session_expires_in, 10);
+        localStorage.setItem('tf_session_token_expiration',
+          (Date.now() + (Number.isNaN(sExp) ? 86400 : sExp) * 1000).toString());
+      }
     }
     if (event?.detail) {
       const payload = {
@@ -135,6 +142,20 @@ async function handleFoxySsoLogin(event) {
     console.error('SSO handshake error:', err);
     if (event?.detail && typeof event.detail.reject === 'function') event.detail.reject(err);
   }
+}
+
+// Returns a non-expired session token, or null. This is the ONLY credential the
+// authenticated preset/last-order calls send — the server derives the customer id from it.
+function getSessionToken() {
+  const t = localStorage.getItem('tf_session_token');
+  if (!t) return null;
+  const exp = parseInt(localStorage.getItem('tf_session_token_expiration') || '0', 10);
+  if (exp && Date.now() >= exp) {
+    localStorage.removeItem('tf_session_token');
+    localStorage.removeItem('tf_session_token_expiration');
+    return null;
+  }
+  return t;
 }
 
 bootstrapFoxyPortal();
@@ -590,10 +611,12 @@ function savePresetToFoxyAPI(presetSlot, presetData) {
         }).catch(() => resolve(false));
         return;
       }
+      const sessionToken = getSessionToken();
+      if (!sessionToken) { console.warn('🔐 No session token; cannot save preset to Foxy'); resolve(false); return; }
       fetch(NETLIFY_FUNCTION_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customerId, slot: presetSlot, preset: presetData })
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionToken },
+        body: JSON.stringify({ slot: presetSlot, preset: presetData })
       }).then(res => res.json()).then(data => {
         if (data.success) { console.log("🔐 Preset saved to FoxyCart"); resolve(true); }
         else { console.error("🔐 Failed to save preset:", data.error); resolve(false); }
@@ -613,7 +636,9 @@ function loadPresetsFromFoxyAPI() {
         resolve({ p1: null, p2: null, p3: null });
         return;
       }
-      fetch(NETLIFY_FUNCTION_URL + '?customerId=' + customerId).then(res => res.json()).then(data => {
+      const sessionToken = getSessionToken();
+      if (!sessionToken) { resolve({ p1: null, p2: null, p3: null }); return; }
+      fetch(NETLIFY_FUNCTION_URL, { headers: { 'Authorization': 'Bearer ' + sessionToken } }).then(res => res.json()).then(data => {
         if (data.success && data.presets) {
           console.log("🔐 Presets loaded from FoxyCart:", data.presets);
           resolve({ p1: data.presets['1'] || null, p2: data.presets['2'] || null, p3: data.presets['3'] || null });
@@ -695,7 +720,9 @@ function parseDoseToGrams(label) {
 function loadLastOrder() {
   getCustomerIdFromPortal().then(customerId => {
     if (!customerId) { alert("Please log in to load your last order."); return; }
-    fetch(`${FOXY_LAST_ORDER_FUNCTION_URL}?customerId=${encodeURIComponent(customerId)}`)
+    const sessionToken = getSessionToken();
+    if (!sessionToken) { alert("Please log in to load your last order."); return; }
+    fetch(FOXY_LAST_ORDER_FUNCTION_URL, { headers: { 'Authorization': 'Bearer ' + sessionToken } })
       .then(res => res.json())
       .then(data => {
         if (!data.success) { console.error("Last order error:", data.error); alert("Sorry, we couldn't load your last order."); return; }
