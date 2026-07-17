@@ -1061,13 +1061,69 @@ function renderTaste(){
   $id('tasteBars').innerHTML=Object.keys(colors).map(label=>{ const v=tot[keys[label]], pct=Math.round((v/maxv)*100); return `<div class="t-row"><span class="tl">${label}</span><div class="t-bar"><span style="width:${pct}%;background:${colors[label]}"></span></div></div>`; }).join('');
 }
 
-/* ---------- cart (same Foxy URL the old builder produced) ---------- */
+/* ---------- cart + subscribe ---------- */
+let subMode = 'once';        // 'once' | 'sub'
+let subFreq = '1m';          // '1m' = monthly | '2m' = every 2 months
+const SUB_DISCOUNT = 0.10;   // 10% off subscription orders (applies to every order incl. first)
+
+// Multiplier applied to the price when the customer is subscribing.
+function subDiscountFactor(){ return subMode === 'sub' ? (1 - SUB_DISCOUNT) : 1; }
+
+// Injects the "One-time / Subscribe & Save" control just above the Add-to-Cart button.
+// Kept in JS (not the Webflow skeleton) so it ships/versions with this script.
+function buildSubscribeControl(){
+  const btn = $id('addCart');
+  if(!btn || document.getElementById('tfSubChoice')) return;
+  injectSubscribeCSS();
+  const wrap = document.createElement('div');
+  wrap.id = 'tfSubChoice';
+  wrap.className = 'tf-sub-choice';
+  wrap.innerHTML = `
+    <label class="tf-sub-opt"><input type="radio" name="tfSubMode" value="once" checked><span>One-time purchase</span></label>
+    <label class="tf-sub-opt tf-sub-featured"><input type="radio" name="tfSubMode" value="sub"><span>Subscribe &amp; Save <b>10%</b></span></label>
+    <div class="tf-sub-freq" id="tfSubFreqWrap" hidden>
+      <label>Deliver
+        <select id="tfSubFreq">
+          <option value="1m">Every month</option>
+          <option value="2m">Every 2 months</option>
+        </select>
+      </label>
+      <div class="tf-sub-note">Recurs on your signup date · change or cancel anytime</div>
+    </div>`;
+  btn.parentNode.insertBefore(wrap, btn);
+  wrap.querySelectorAll('input[name="tfSubMode"]').forEach(r=>{
+    r.addEventListener('change', ()=>{
+      subMode = r.value;
+      const fw = $id('tfSubFreqWrap'); if(fw) fw.hidden = (subMode !== 'sub');
+      updateStats();
+    });
+  });
+  $id('tfSubFreq')?.addEventListener('change', e=>{ subFreq = e.target.value; updateStats(); });
+}
+
+function injectSubscribeCSS(){
+  if(document.getElementById('tfb-sub-styles')) return;
+  const s=document.createElement('style'); s.id='tfb-sub-styles';
+  s.textContent=`
+    #tf-builder .tf-sub-choice{display:flex;flex-direction:column;gap:8px;margin:12px 0}
+    #tf-builder .tf-sub-opt{display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;cursor:pointer;font-size:14px}
+    #tf-builder .tf-sub-opt:has(input:checked){border-color:var(--teal);background:var(--panel-hi)}
+    #tf-builder .tf-sub-featured b{color:var(--teal)}
+    #tf-builder .tf-sub-freq{padding:2px 4px 0}
+    #tf-builder .tf-sub-freq select{margin-left:6px;padding:4px 8px;border-radius:8px;background:var(--panel);color:inherit;border:1px solid var(--line)}
+    #tf-builder .tf-sub-note{font-size:11px;color:var(--muted);margin-top:6px}
+  `;
+  document.head.appendChild(s);
+}
+
 function addToCart(){
   if(selected.length<3 || !flavor){ toast(selected.length<3?'Add at least 3 ingredients':'Choose a flavor'); return; }
-  const price=(calcPrice(pricedItems())+flavorPrice()).toFixed(2);
+  const isSub = subMode === 'sub';
+  const price=((calcPrice(pricedItems())+flavorPrice()) * subDiscountFactor()).toFixed(2);
   let url=`https://tailorfit.foxycart.com/cart?cart=add&name=${encodeURIComponent('Custom')}&price=${price}&quantity=1&item_category=${encodeURIComponent('Default for all products')}`;
   selected.forEach((s,i)=>{ url+=`&Ingredient${i+1}=${encodeURIComponent(`${s.name} - ${fmtDose(s.dosage)}`)}`; });
   url+=`&Flavor=${encodeURIComponent(flavor)}`;
+  if(isSub) url+=`&sub_frequency=${encodeURIComponent(subFreq)}`;   // no sub_startdate → recurs on the signup day-of-month
   window.location.href=url;
 }
 
@@ -1102,11 +1158,13 @@ function updateStats(){
   const note=$id('progNote'); if(note){ if(n>=3){ note.textContent=`✓ ${n} ingredients — ready when you are`; note.classList.add('ready'); } else { note.textContent=`Add at least 3 ingredients to continue (${n}/3)`; note.classList.remove('ready'); } }
   const ss=$id('servingSize'); if(ss) ss.textContent=fmtDose(servingSize());
   const cal=$id('calories'); if(cal) cal.textContent=calcCalories();
-  const price = n ? calcPrice(pricedItems()) + flavorPrice() : 0;
+  const base = n ? calcPrice(pricedItems()) + flavorPrice() : 0;
+  const isSub = subMode === 'sub';
+  const price = base * subDiscountFactor();
   const sub=$id('subtotal'); if(sub) sub.textContent=`$${price.toFixed(2)}`;
   const per=$id('perServ'); if(per) per.textContent = n ? `$${(price/SERVINGS).toFixed(2)} / serving` : '—';
   const ok=n>=3 && !!flavor, btn=$id('addCart');
-  if(btn){ btn.disabled=!ok; btn.textContent = ok ? `Add to Cart · $${price.toFixed(2)}` : (n<3?'Add 3+ ingredients':'Choose a flavor'); }
+  if(btn){ btn.disabled=!ok; btn.textContent = ok ? `${isSub?'Subscribe':'Add to Cart'} · $${price.toFixed(2)}` : (n<3?'Add 3+ ingredients':'Choose a flavor'); }
   const fc=$id('fabCount'); if(fc){ fc.style.display=n?'inline-flex':'none'; fc.textContent=n; }
   const dc=$id('doneCatalog'); if(dc) dc.textContent = n?`Done · ${n} in blend`:'Done';
   // renderTaste();  // ⛔ taste/flavor profile disabled — calc accuracy TBD, re-enable later
@@ -1254,6 +1312,7 @@ document.addEventListener('DOMContentLoaded', function(){
   $id('search')?.addEventListener('input', e=>{ search=e.target.value.toLowerCase().trim(); renderCatalog(); });
   document.querySelectorAll('#chips .chip').forEach(c=>c.addEventListener('click',()=>{ document.querySelectorAll('#chips .chip').forEach(x=>x.classList.remove('active')); c.classList.add('active'); activeFilter=c.dataset.f; renderCatalog(); }));
   $id('addCart')?.addEventListener('click', addToCart);
+  buildSubscribeControl();                              // inject One-time / Subscribe & Save toggle
   $id('openCatalog')?.addEventListener('click', openDrawer);
   $id('closeCatalog')?.addEventListener('click', closeDrawer);
   $id('doneCatalog')?.addEventListener('click', closeDrawer);
